@@ -1,0 +1,53 @@
+MERGE (a:Loc {name:'Airport'})
+MERGE (b:Loc {name:'Birati'})
+MERGE (c:Loc {name:'Baguihati'})
+MERGE (d:Loc {name:'Nagerbazar'})
+MERGE (e:Loc {name:'laketown'})
+MERGE (f:Loc {name:'saltlake'})
+
+MERGE (a)-[:ROAD {dist:5}]->(b)//airport-birati
+MERGE (a)-[:ROAD {dist:5}]->(c)//airport-baguihati
+MERGE (a)-[:ROAD {dist:8}]->(d)//airport-nagerbazar
+MERGE (b)-[:ROAD {dist:5}]->(a)//birati-airport
+MERGE (c)-[:ROAD {dist:5}]->(a)//baguihati-airport
+MERGE (d)-[:ROAD {dist:8}]->(a)//nagerbazar-airport
+MERGE (d)-[:ROAD {dist:6}]->(e)//nagerbazar-laketown
+MERGE (e)-[:ROAD {dist:6}]->(d)//laketown-nagerbazar
+MERGE (e)-[:ROAD {dist:6}]->(f)//laketown-saltlake
+MERGE (f)-[:ROAD {dist:6}]->(e)//saltlake-laketown
+MERGE (f)-[:ROAD {dist:6}]->(c)//saltlake-baguihati
+MERGE (c)-[:ROAD {dist:6}]->(f)//baguihati-saltlake
+MERGE (d)-[:ROAD {dist:4}]->(c)//nagerbazar-baguihati
+MERGE (c)-[:ROAD {dist:4}]->(d)//baguihati-nagerbazar
+
+birati to airport:
+MERGE (b)-[:bus_L238]->(a)
+MERGE (b)-[:bus_223]->(a)
+MERGE (b)-[:bus_237]->(a)
+MERGE (b)-[:bus_47]->(a)
+MERGE (b)-[:bus_A47]->(a)
+
+airport to baguihati:
+MERGE (a)-[:bus_47]->(c)
+MERGE (a)-[:bus_237]->(c)
+MERGE (a)-[:bus_L238]->(c)
+
+
+baguihati to saltlake:
+MERGE (c)-[:bus_47]->(f)
+MERGE (c)-[:bus_237]->(f)
+MERGE (c)-[:bus_L238]->(f)
+
+airport to nagerbazar:
+MERGE (a)-[:bus_A47]->(d)
+MERGE (a)-[:bus_223]->(d)
+
+nagerbazar to baguihati:
+MERGE (d)-[:bus_221]->(c)
+
+nagerbazar to laketown:
+MERGE (d)-[:bus_223]->(e)
+MERGE (d)-[:bus_A47]->(e)
+
+laketown to saltlake:
+MERGE (e)-[:bus_A47]->(f)

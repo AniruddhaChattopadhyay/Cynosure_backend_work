@@ -1,0 +1,408 @@
+[[algorithms-louvain]]
+= The Louvain algorithm
+
+[abstract]
+--
+This section describes the Louvain algorithm in the Neo4j Graph Algorithms library.
+--
+
+// tag::introduction[]
+The Louvain method of community detection is an algorithm for detecting communities in networks.
+It maximizes a modularity score for each community, where the modularity quantifies the quality of an assignment of nodes to communities by evaluating how much more densely connected the nodes within a community are, compared to how connected they would be in a random network.
+
+The Louvain algorithm is one of the fastest modularity-based algorithms, and works well with large graphs.
+It also reveals a hierarchy of communities at different scales, which can be useful for understanding the global functioning of a network.
+// end::introduction[]
+
+This section includes:
+
+* <<algorithms-louvain-context, History and explanation>>
+* <<algorithms-louvain-usecase, Use-cases - when to use the Louvain algorithm>>
+* <<algorithms-louvain-limitations, Constraints - when not to use the Louvain algorithm>>
+* <<algorithms-louvain-sample, Louvain algorithm sample>>
+* <<algorithms-louvain-hierarchical, Hierarchical Louvain algorithm sample>>
+* <<algorithms-louvain-pre-defined, Pre-defined communities>>
+* <<algorithms-louvain-hgp, Huge graph projection>>
+* <<algorithms-louvain-cp, Cypher projection>>
+* <<algorithms-louvain-syntax, Syntax>>
+* <<algorithms-louvain-support, Graph type support>>
+
+
+[[algorithms-louvain-context]]
+== History and explanation
+
+// tag::explanation[]
+The https://arxiv.org/pdf/0803.0476.pdf["Louvain algorithm"^] was proposed in 2008 by authors from the University of Louvain.
+
+The method consists of repeated application of two steps.
+The first step is a "greedy" assignment of nodes to communities, favoring local optimizations of modularity.
+The second step is the definition of a new coarse-grained network, based on the communities found in the first step.
+These two steps are repeated until no further modularity-increasing reassignments of communities are possible.
+// end::explanation[]
+
+
+// tag::formula[]
+The algorithm is initialized with each node in its own community.
+
+In the first stage we iterate through each of the nodes in the network.
+We take each node, remove it from its current community and replace it in the community of ones of its neighbors.
+We compute the modularity change for each of the node's neighbors.
+If none of these modularity changes are positive, the node stays in its current community.
+If some of the modularity changes are positive, the node moves into the community where the modularity change is most positive.
+Ties are resolved arbitrarily.
+We repeat this process for each node until one pass through all nodes yields no community assignment changes.
+
+The second stage in the Louvain method uses the communities that were discovered in the community reassignment stage, to define a new coarse-grained network.
+In this network, the newly discovered communities are the nodes.
+The relationship weight between the nodes representing two communities is the sum of the relationship weights between the lower-level nodes of each community.
+
+The rest of the Louvain method consists of the repeated application of stages 1 and 2.
+By applying stage 1 (the community reassignment phase) to the coarse-grained graph, we find a second tier of communities of communities of nodes.
+Then, in the next application of stage 2, we define a new coarse-grained graph at this higher-level of the hierarchy.
+We keep going like this until an application of stage 1 yields no reassignments.
+At that point, repeated application of stages 1 and 2 will not yield any more modularity-optimizing changes, so the process is complete.
+// end::formula[]
+
+
+[[algorithms-louvain-usecase]]
+== Use-cases - when to use the Louvain algorithm
+
+// tag::use-case[]
+* The Louvain method has been proposed to provide recommendations for Reddit users to find similar subreddits, based on the general user behavior.
+  Find more details, see http://snap.stanford.edu/class/cs224w-2014/projects2014/cs224w-16-final.pdf["Subreddit Recommendations within Reddit Communities"].
+* The Louvain method has been used to extract topics from online social platforms, such as Twitter and Youtube, based on the co-occurence graph of terms in documents, as a part of Topic Modeling process.
+  This process is described in http://www.lbd.dcc.ufmg.br/colecoes/sbsi/2016/047.pdf["Topic Modeling based on Louvain method in Online Social Networks"].
+* The Louvain method has been used to investigate the human brain, and find hierarchical community structures within the brain's functional network.
+  The study mentioned is https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2784301/["Hierarchical Modularity in Human Brain Functional Networks"].
+// end::use-case[]
+
+
+[[algorithms-louvain-limitations]]
+== Constraints - when not to use the Louvain algorithm
+
+// tag::constraint[]
+Although the Louvain method, and modularity optimization algorithms more generally, have found wide application across many domains, some problems with these algorithms have been identified:
+
+The _resolution_ limit::
+For larger networks, the Louvain method doesn't stop with the "intuitive" communities.
+Instead, there's a second pass through the community modification and coarse-graining stages, in which several of the intuitive communities are merged together.
+This is a general problem with modularity optimization algorithms; they have trouble detecting small communities in large networks.
+It's a virtue of the Louvain method that something close to the intuitive community structure is available as an intermediate step in the process.
+
+The _degeneracy_ problem::
+There is typically an exponentially large (in network size) number of community assignments with modularities close to the maximum.
+This can be a severe problem because, in the presence of a large number of high modularity solutions, it's hard to find the global maximum, and difficult to determine if the global maximum is truly more scientifically important than local maxima that achieve similar modularity.
+Research undertaken at Universite Catholique de Louvain showed that the different locally optimal community assignments can have quite different structural properties.
+For more information, see https://arxiv.org/abs/0910.0165["The performance of modularity maximization in practical contexts"]
+// end::constraint[]
+
+
+[[algorithms-louvain-sample]]
+== Louvain algorithm sample
+
+This sample will explain the Louvain algorithm, using a simple graph:
+
+image::louvain.png[]
+
+.The following will create a sample graph:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=create-sample-graph]
+----
+
+.The following will run the algorithm and stream results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=stream-sample-graph]
+----
+
+.The following will run the algorithm and write back results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=write-sample-graph]
+----
+
+// tag::stream-sample-graph-result[]
+.Results
+[opts="header",cols="1,1"]
+|===
+| Name    | Community
+| Alice   | 0
+| Bridget | 0
+| Michael | 0
+| Charles | 1
+| Doug    | 1
+| Mark    | 1
+|===
+// end::stream-sample-graph-result[]
+
+// tag::stream-sample-graph-explanation[]
+Our algorithm found two communities with 3 members each.
+
+Mark, Doug, and Charles are all friends with each other, as are Bridget, Alice, and Michael.
+Charles is the only one who has friends in both communities, but he has more in community 4 so he fits better in that one.
+// end::stream-sample-graph-explanation[]
+
+
+[[algorithms-louvain-hierarchical]]
+== Hierarchical Louvain algorithm sample
+
+This sample will explain the hierarchical communities option of the Louvain algorithm:
+
+.The following will create a sample graph:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=create-hierarchical-sample-graph]
+----
+
+.The following will run the algorithm and stream results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=stream-hierarchical-sample-graph]
+----
+
+.The following will run the algorithm and write back results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=write-hierarchical-sample-graph]
+----
+
+// tag::stream-hierarchical-sample-graph-result[]
+.Results
+[opts="header",cols="1,1"]
+|===
+| Name    | Communities
+| Alice   | [0,0]
+| Bridget | [0,0]
+| Michael | [0,0]
+| Charles | [1,1]
+| Doug    | [1,1]
+| Mark    | [1,1]
+| Karin   | [2,1]
+| Amy     | [2,1]
+|===
+// end::stream-hierarchical-sample-graph-result[]
+
+// tag::stream-hierarchical-sample-graph-explanation[]
+
+Our algorithm found two hierarchical levels of communities.
+
+On the first level it found three communities with Alice, Bridget and Michael forming the first community, Charles, Doug and Mark forming the second one and Karin and Amy forming the third one.
+On the second level it found two communities. Alice, Bridget and Michael stay in the same community, but the other two communities merge into a single one.
+
+// end::stream-hierarchical-sample-graph-explanation[]
+
+
+[[algorithms-louvain-pre-defined]]
+== Pre-defined communities
+
+This sample will explain the pre-defined communities option of the Louvain algorithm.
+Initial or pre-defined communities for nodes are specified using the `communityProperty` parameter.
+
+.The following will create a sample graph:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=create-pre-defined-sample-graph]
+----
+
+.The following will run the algorithm and stream results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=stream-pre-defined-sample-graph]
+----
+
+.The following will run the algorithm and write back results:
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=write-pre-defined-sample-graph]
+----
+
+In this example the pre-defined communities are read from the `community` property, and the communities computed by the algorithm are stored to the `newCommunity` property.
+
+
+// tag::stream-pre-defined-sample-graph-result[]
+.Results
+[opts="header",cols="1,1"]
+|===
+| Name    | Community
+| Alice   | 0
+| Bridget | 0
+| Michael | 0
+| Charles | 1
+| Doug    | 1
+| Mark    | 1
+| Karin   | 1
+| Amy     | 1
+|===
+// end::stream-pre-defined-sample-graph-result[]
+
+
+[[algorithms-louvain-hgp]]
+== Huge graph projection
+
+include::huge-projection.adoc[tag=explanation]
+
+.Set `graph:'huge'` in the config:
+
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=huge-projection]
+----
+
+
+[[algorithms-louvain-cp]]
+== Cypher projection
+
+include::projected-graph-model/cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source,cypher]
+----
+include::scripts/louvain.cypher[tag=cypher-loading]
+----
+
+
+[[algorithms-louvain-syntax]]
+== Syntax
+
+.The following will run the algorithm and write back results:
+[source,cypher]
+----
+CALL algo.louvain(label:String, relationship:String,
+    {weightProperty:'weight', defaultValue:1.0, write: true, writeProperty:'community', concurrency:4})
+YIELD nodes, communityCount, iterations, loadMillis, computeMillis, writeMillis
+
+----
+
+.Parameters
+[opts="header",cols="1,1,1,1,4"]
+|===
+| Name           | Type    | Default        | Optional | Description
+| label          | string  | null           | yes      | The label to load from the graph. If null, load all nodes
+| relationship   | string  | null           | yes      | The relationship-type to load from the graph. If null, load all relationships
+| weightProperty | string  | null           | yes      | The property name that contains weight. If null, treats the graph as unweighted. Must be numeric.
+| write          | boolean | true           | yes      | Specifies if the result should be written back as a node property
+| writeProperty  | string  | 'community'    | yes      | The property name written back to the ID of the community that particular node belongs to
+| communityProperty  | string  | null    | yes      | The property name that contains an initial or pre-defined community (must be a number)
+| defaultValue   | float   | null           | yes      | The default value of the weight in case it is missing or invalid
+| includeIntermediateCommunities          | boolean | false           | yes      | Specifies whether an array of intermediate communities should be returned
+| intermediateCommunitiesWriteProperty  | string  | 'communities'    | yes      | The property name written back to the ID of the intermediate communities that particular node belongs to
+| concurrency    | int     | available CPUs | yes      | The number of concurrent threads
+| graph          | string  | 'heavy'        | yes      | Use 'heavy' when describing the subset of the graph with label and relationship-type parameter. Use 'cypher' for describing the subset with cypher node-statement and relationship-statement
+|===
+
+.Results
+[opts="header",cols="1,1,6"]
+|===
+| Name           | Type | Description
+| loadMillis     | int  | Milliseconds for loading data
+| computeMillis  | int  | Milliseconds for running the algorithm
+| writeMillis    | int  | Milliseconds for writing result data back
+| postProcessingMillis    | int  | Milliseconds for computing percentiles and community count
+
+| nodes          | int  | The number of nodes considered
+| communityCount | int  | The number of communities found
+| iterations     | int  | The number of iterations run
+| modularities     | list of double  | List of modularities at each iteration
+| modularity    | double  | Modularity after final iteration
+
+| p1                   | double  | The 1 percentile of community size.
+| p5                   | double  | The 5 percentile of community size.
+| p10                   | double  | The 10 percentile of community size.
+| p25                   | double  | The 25 percentile of community size.
+| p50                   | double  | The 50 percentile of community size.
+| p75                   | double  | The 75 percentile of community size.
+| p90                   | double  | The 90 percentile of community size.
+| p95                   | double  | The 95 percentile of community size.
+| p99                   | double  | The 99 percentile of community size.
+| p100                  | double  | The 100 percentile of community size.
+
+| write | boolean | Specifies if the result was written back as a node property
+| writeProperty | string | The property name written back to
+
+| includeIntermediateCommunities | boolean | Specifies if the intermediate communities were written back as a node property
+| intermediateCommunitiesWriteProperty | string | The property name written back to for intermediate communities
+
+|===
+
+
+.The following will run the algorithm and stream results:
+[source, cypher]
+----
+CALL algo.louvain.stream(label:String, relationship:String,
+    {weightProperty:'propertyName', defaultValue:1.0, concurrency:4})
+YIELD nodeId, community - yields a community to each node id
+----
+
+.Parameters
+[opts="header",cols="1,1,1,1,4"]
+|===
+| Name           | Type   | Default | Optional | Description
+| label          | string | null    | yes      | The label to load from the graph. If null, load all nodes
+| relationship   | string | null    | yes      | The relationship-type to load from the graph. If null, load all relationships
+| weightProperty | string | null    | yes      | The property name that contains weight. If null, treats the graph as unweighted. Must be numeric.
+| defaultValue   | float  | 1.0     | yes      | The default value of the weight if it is missing or invalid
+| graph          | string | 'heavy' | yes      | Use 'heavy' when describing the subset of the graph with label and relationship-type parameter. Use 'cypher' for describing the subset with cypher node-statement and relationship-statement
+|===
+
+.Results
+[opts="header"]
+|===
+| Name      | Type | Description
+| nodeId    | int  | Node ID
+| community | int  | Community ID after final iteration
+| communities | list of int  | Community IDs for each iteration
+|===
+
+
+[[algorithms-louvain-support]]
+== Graph type support
+
+The Louvain algorithm supports the following graph types:
+
+* [x] undirected, unweighted
+** weightProperty: null
+* [x] undirected, weighted
+** weightProperty : 'weight'
+
+
+ifndef::env-docs[]
+== References
+
+// tag::references[]
+* [1] https://arxiv.org/pdf/0803.0476.pdf
+* [2] https://www.quora.com/Is-there-a-simple-explanation-of-the-Louvain-Method-of-community-detection
+* [3] https://arxiv.org/abs/0910.0165
+* [4] https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2784301/
+
+
+// end::references[]
+endif::env-docs[]
+
+ifdef::implementation[]
+// tag::implementation[]
+
+
+== Implementation details
+
+:leveloffset: +1
+// copied from: https://github.com/neo4j-contrib/neo4j-graph-algorithms/issues/96
+
+The Louvain algorithm is an algorithm for detecting graph partitions in networks that relies upon a heuristic for maximizing the modularity.
+
+- [x] single threaded implementation
+- [x] tests
+- [ ] edge case tests
+- [x] implement procedure
+- [x] simple benchmark
+- [x] benchmark on bigger graphs
+- [x] parallelization
+- [ ] evaluation
+- [x] documentation
+
+
+== Details
+
+// end::implementation[]
+endif::implementation[]
